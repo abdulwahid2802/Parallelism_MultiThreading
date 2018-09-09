@@ -1,68 +1,94 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Parallellism1.TaskCreating
 {
     class MainClass
     {
-        public static void Write(string someString)
-        {
-            for (int i = 1; i <= 1000;i++)
-                Console.Write(someString);
-        }
-
-        public static void Write(object o)
-        {
-            for (int i = 1; i <= 1000; i++)
-                Console.Write(o);
-        }
-
-        public static int GetLength(object o)
-        {
-            Console.WriteLine($"The process with id {Task.CurrentId} is processing {o}");
-            return o.ToString().Length;
-        }
-
         public static void Main(string[] args)
         {
 
 
-            //+++++ METHOD 1 +++++++//
+            //+++++ Cancelling tasks +++++++//
 
-            // Directly starts the task
-            Task.Factory.StartNew(() => Write("Method 1.1"));
-
-            // Make a new task variable first and start
-            var t = new Task(() => Write("Method 1.2"));
-            t.Start();
+            // Cancellation token to pass into task
+            var cts = new CancellationTokenSource();
+            var token = cts.Token;
 
 
-            //+++++ METHOD 1 +++++++//
+            // Subscribe to token to wait for cancellations to get notified
+            token.Register(()=>
+            {
+                Console.WriteLine("Cancellation has been requested...");
+            });
+
+            var task = new Task(
+                ()=>
+            {
+                for (int i = 0; ; i++)
+                {
+
+                    //+++++ METHOD 1 of cancelling +++++//
+                    if (token.IsCancellationRequested)
+                        throw new OperationCanceledException();
+                    else
+                        Console.WriteLine(i);
+
+                    //+++++ METHOD 2 of cancelling +++++//
+                    // merges 'if and throw' statements
+                    //token.ThrowIfCancellationRequested();
+                    //Console.WriteLine(i);
+                }
+            }, token);
+
+            task.Start();
+
+            Task.Factory.StartNew(() =>
+            {
+                token.WaitHandle.WaitOne();
+                Console.WriteLine("Wait handle has been released, cancellation requested...");
+            });
+
+            // Sends the cancellation request when key pressed
+            Console.ReadKey();
+            cts.Cancel();
 
 
-            Task t2 = new Task(Write, "Method 2.1");
-            t2.Start();
 
-            Task.Factory.StartNew(Write, "Method 2.2");
+            //+++++ Complex Tokens +++++++//
 
 
+            var planned = new CancellationTokenSource();
+            var preventative = new CancellationTokenSource();
+            var emergency = new CancellationTokenSource();
 
-            //+++++ RETURNING VALUE +++++++//
+            // Links the tokens
+            var paranoid = CancellationTokenSource.CreateLinkedTokenSource
+                                                  (
+                                                      planned.Token,
+                                                      preventative.Token,
+                                                      emergency.Token
+                                                     );
 
-            var task1 = new Task<int>(GetLength, "This is some string");
-            task1.Start();
+            Task.Factory.StartNew(() =>
+            {
+                for (int i = 0; ; i++)
+                {
+                    paranoid.Token.ThrowIfCancellationRequested();
+                    Console.WriteLine($"{i}");
+                    Thread.Sleep(1000);
+                }
+            });
 
-            Task<int> task2 = Task.Factory.StartNew(GetLength, "This is another string");
+
+            Console.ReadKey();
+            // now we can call cancellation using any token
+            emergency.Cancel();
 
 
-            Console.WriteLine($"Result of task1 {task1.Result}");
-            Console.WriteLine($"Result of task2 {task2.Result}");
 
 
-            // Running the Write method on main thread
-            Write("Salom");
-
-            Console.WriteLine("Hello World!");
         }
     }
 }
